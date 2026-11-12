@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mtt_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mtt_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mtt_exchange}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mtt_user} -d ${POSTGRES_DB:-mtt_exchange}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: mtt-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mtt-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      SECRET_KEY: ${SECRET_KEY:-mtt-production-override-secret-key-quantrelic}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mtt_user}:${POSTGRES_PASSWORD:-mtt_password}@postgres:5432/${POSTGRES_DB:-mtt_exchange}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mtt_user}:${POSTGRES_PASSWORD:-mtt_password}@postgres:5432/${POSTGRES_DB:-mtt_exchange}
+      REDIS_URL: redis://redis:6379/0
+      USE_EMBEDDED_POSTGRES: "false"
+      USE_FAKE_REDIS_FALLBACK: "false"
+      LOG_JSON: "true"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mtt-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+
+  db-backup:
+    image: postgres:16-alpine
+    container_name: mtt-db-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-mtt_user}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-mtt_password}
+      PGDATABASE: ${POSTGRES_DB:-mtt_exchange}
+      BACKUP_INTERVAL_SEC: ${BACKUP_INTERVAL_SEC:-900}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-24}
+    volumes:
+      - ./infra/postgres/backup.sh:/usr/local/bin/backup.sh:ro
+      - backup_data:/backups
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  backup_data:
