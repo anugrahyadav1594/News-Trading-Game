@@ -11,8 +11,8 @@ from app.db.session import get_active_database_url
 import app.models  # noqa: F401 - register all 28 ORM models
 
 config = context.config
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
@@ -50,7 +50,11 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    provided_connection = config.attributes.get("connection")
+    if provided_connection is not None:
+        do_run_migrations(provided_connection)
+    else:
+        asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():

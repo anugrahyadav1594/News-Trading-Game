@@ -36,3 +36,9 @@ def configure_logging(level: str = "INFO", json_output: bool = True) -> None:
         )
     root.handlers.clear()
     root.addHandler(handler)
+    # Silence verbose internal pgserver startup chatter while preserving uvicorn & app logs
+    logging.getLogger("pgserver").setLevel(logging.WARNING)
+    for uv_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(uv_name)
+        uv_logger.disabled = False
+        uv_logger.setLevel(logging.INFO)

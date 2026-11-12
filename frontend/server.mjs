@@ -5,7 +5,7 @@ import next from "next";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOST || "0.0.0.0";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3006", 10);
 const backendUrl = new URL(process.env.BACKEND_INTERNAL_URL || "http://127.0.0.1:8000");
 
 const app = next({ dev, hostname, port });

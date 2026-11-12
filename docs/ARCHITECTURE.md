@@ -19,7 +19,7 @@ Per Section 17 (Rule 1–3), the workspace and runtime environment were inspecte
   - **PostgreSQL & Redis Strategy:**
     - **Production Deployment:** Full `Dockerfile`s and `docker-compose.yml` / `docker-compose.prod.yml` orchestrating `postgres:16-alpine`, `redis:7-alpine`, `backend` (Python 3.12 + FastAPI/Uvicorn), `frontend` (Next.js standalone), and automated `pg_dump` backup sidecar.
     - **Sandbox Verification & CI Testing:** Because container sandboxes do not run a nested Docker daemon, automated tests and live preview servers will run against a genuine embedded **PostgreSQL** server binary (`pgserver` wheel) so all SQLAlchemy 2.0 queries, Alembic migrations, `NUMERIC(18,4)` constraints, row-level locks (`SELECT ... FOR UPDATE`), and transaction-scoped advisory locks (`pg_advisory_xact_lock`) execute on real PostgreSQL, paired with a dual-mode Redis adapter (`redis.asyncio` in production; `fakeredis.aioredis` + in-process pub/sub broker when no external Redis daemon is bound).
-  - **Preview Networking:** Next.js frontend binds to `0.0.0.0:3000` and proxies `/api/*` and `/ws/*` to FastAPI (`0.0.0.0:8000`) using relative browser paths so browser clients never call `localhost` directly.
+  - **Preview Networking:** Next.js frontend binds to `0.0.0.0:3006` and proxies `/api/*`, `/health/*`, and `/ws/*` to FastAPI (`0.0.0.0:8000`) using relative browser paths so browser clients never call `localhost` directly.
 
 ---
 

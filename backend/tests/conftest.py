@@ -1,20 +1,15 @@
-import asyncio
 import os
 import tempfile
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from alembic import command
-from alembic.config import Config
-from pathlib import Path
 
 os.environ["AUTO_SEED_DEMO"] = "false"
 os.environ["USE_FAKE_REDIS_FALLBACK"] = "true"
 os.environ["ORDER_RATE_LIMIT_PER_10S"] = "10000"
 
 from app.core.redis_bus import redis_bus
-from app.db.session import close_db_engine, get_active_database_url, get_session_factory, init_db_engine
-from app.main import create_app
+from app.db.session import close_db_engine, get_session_factory, init_db_engine
+from app.main import apply_alembic_migrations_async, create_app
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -29,13 +24,8 @@ async def test_app():
     import pgserver
     pg_srv = pgserver.get_server(tmp_pg)
     async_uri = pg_srv.get_uri().replace("postgresql://", "postgresql+asyncpg://", 1)
-    init_db_engine(async_uri)
-
-    backend_root = Path(__file__).resolve().parent.parent
-    alembic_cfg = Config(str(backend_root / "alembic.ini"))
-    alembic_cfg.set_main_option("script_location", str(backend_root / "alembic"))
-    alembic_cfg.set_main_option("sqlalchemy.url", get_active_database_url())
-    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    engine = init_db_engine(async_uri)
+    await apply_alembic_migrations_async(engine)
 
     await redis_bus.connect()
     app = create_app()

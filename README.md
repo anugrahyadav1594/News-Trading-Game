@@ -88,17 +88,18 @@ docker compose up --build
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-### Option B: Direct Local Execution
+### Option B: Direct Local Execution (Frontend on Port 3006, Backend on Port 8000)
 ```bash
-# 1. Backend (runs Alembic migrations automatically on startup)
+# 1. Backend (runs Alembic migrations automatically on startup -> http://0.0.0.0:8000)
 cd backend
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# 2. Frontend (custom server.mjs proxies /api/*, /health/*, and /ws/* toBACKEND_INTERNAL_URL)
+# 2. Frontend (custom server.mjs on port 3006 proxies /api/*, /health/*, and /ws/* to BACKEND_INTERNAL_URL)
 cd frontend
 npm install
 npm run build
 npm run start
+# Open http://localhost:3006
 ```
 
 ---

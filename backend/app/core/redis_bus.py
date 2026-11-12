@@ -5,6 +5,8 @@ from typing import Any
 import uuid
 
 import redis.asyncio as aioredis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from fakeredis import FakeServer
 import fakeredis.aioredis as fake_aioredis
 
@@ -39,18 +41,26 @@ class RedisCoordBus:
         if self._client is not None:
             return
         settings = get_settings()
+        client: aioredis.Redis | None = None
         try:
             client = aioredis.from_url(
                 settings.REDIS_URL,
                 encoding="utf-8",
                 decode_responses=True,
-                socket_connect_timeout=1.5,
+                socket_connect_timeout=0.5,
+                retry_on_timeout=False,
+                retry=Retry(NoBackoff(), 0),
             )
             await client.ping()
             self._client = client
             self.using_fallback = False
             logger.info("Connected to external Redis", extra={"structured": {"redis_url": settings.REDIS_URL}})
         except Exception as exc:
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
             if not settings.USE_FAKE_REDIS_FALLBACK:
                 raise
             self._fake_server = FakeServer()

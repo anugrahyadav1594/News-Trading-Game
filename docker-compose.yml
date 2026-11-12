@@ -71,9 +71,10 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      PORT: 3006
       BACKEND_INTERNAL_URL: http://backend:8000
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3006}:3006"
 
   db-backup:
     image: postgres:16-alpine

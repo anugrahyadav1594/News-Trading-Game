@@ -1,11 +1,15 @@
 from contextlib import asynccontextmanager
+import logging
+from pathlib import Path
 import uuid
+
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from alembic import command
-from alembic.config import Config
-from pathlib import Path
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api.v1.router import api_v1_router
 from app.api.v1.ws import ws_router
@@ -17,21 +21,31 @@ from app.db.session import close_db_engine, get_active_database_url, get_session
 from app.modules.tournament.seed_demo import ensure_demo_tournament_seeded
 from app.workers.runtime import background_loops
 
+logger = logging.getLogger(__name__)
 
-def run_alembic_upgrade() -> None:
+
+def _upgrade_with_connection(connection: Connection, alembic_cfg: Config) -> None:
+    alembic_cfg.attributes["connection"] = connection
+    command.upgrade(alembic_cfg, "head")
+
+
+async def apply_alembic_migrations_async(engine: AsyncEngine) -> None:
     backend_root = Path(__file__).resolve().parent.parent
     alembic_cfg = Config(str(backend_root / "alembic.ini"))
     alembic_cfg.set_main_option("script_location", str(backend_root / "alembic"))
     alembic_cfg.set_main_option("sqlalchemy.url", get_active_database_url())
-    command.upgrade(alembic_cfg, "head")
+    alembic_cfg.attributes["configure_logger"] = False
+    async with engine.begin() as conn:
+        await conn.run_sync(_upgrade_with_connection, alembic_cfg)
+    logger.info("Alembic database schema verified at head (28 tables + immutability triggers)")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.LOG_LEVEL, settings.LOG_JSON)
-    init_db_engine()
-    await asyncio_to_thread_migrations()
+    engine = init_db_engine()
+    await apply_alembic_migrations_async(engine)
     await redis_bus.connect()
 
     if settings.AUTO_SEED_DEMO:
@@ -41,17 +55,15 @@ async def lifespan(app: FastAPI):
                 await ensure_demo_tournament_seeded(session)
 
     background_loops.start()
+    logger.info(
+        "NEWS TRADING — MTT Exchange Engine ONLINE (API: /api/v1, Docs: /docs, WS: /ws/v1)",
+    )
     try:
         yield
     finally:
         await background_loops.stop()
         await redis_bus.close()
         await close_db_engine()
-
-
-async def asyncio_to_thread_migrations() -> None:
-    import asyncio
-    await asyncio.to_thread(run_alembic_upgrade)
 
 
 def create_app() -> FastAPI:
